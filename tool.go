@@ -33,8 +33,8 @@ func debounce(dur time.Duration, in chan interface{}, cb func()) {
 }
 
 func shortenID(str string) string {
-	if len(str) > 16 {
-		return str[0:16]
+	if len(str) > 24 {
+		return str[0:12] + "-" + str[12:24]
 	}
 	return str
 }

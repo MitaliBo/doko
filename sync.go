@@ -49,19 +49,43 @@ func queryDocker(client *docker.Client) (svcs map[string]Service, chks map[strin
 		if c.Labels == nil {
 			continue
 		}
-		var svc Service
-		svc.Name = c.Labels[LabelServiceNameKey]
+
+		shortID := shortenID(c.ID)
+
+		svc := Service{
+			Name: c.Labels[LabelServiceNameKey],
+			ID:   ServiceIDPrefix + shortID,
+			Tags: cleanStrSlice(strings.Split(c.Labels[LabelServiceTagsKey], ",")),
+			Meta: map[string]string{},
+		}
+
 		if len(svc.Name) == 0 {
 			continue
 		}
-		svc.ID = ServiceIDPrefix + shortenID(c.ID)
-		svc.Port, _ = strconv.Atoi(c.Labels[LabelServicePortKey])
-		if svc.Port == 0 {
-			log.Printf("label %s is missing for container %s", LabelServicePortKey, svc.ID)
+
+		port, _ := strconv.Atoi(c.Labels[LabelServicePortKey])
+		if port == 0 {
+			log.Printf("container %s: label %s is missing or invalid", shortID, LabelServicePortKey)
 			continue
 		}
-		svc.Tags = cleanStrSlice(strings.Split(c.Labels[LabelServiceTagsKey], ","))
-		svc.Meta = map[string]string{}
+		if c.HostConfig.NetworkMode == "host" {
+			svc.Port = port
+		} else if c.HostConfig.NetworkMode == "default" {
+			for _, p := range c.Ports {
+				if int(p.PrivatePort) == port {
+					svc.Port = int(p.PublicPort)
+					break
+				}
+			}
+			if svc.Port == 0 {
+				log.Printf("container %s: port %d is not mapped", shortID, port)
+				continue
+			}
+		} else {
+			log.Printf("container %s: network mode %s is not supported", shortID, c.HostConfig.NetworkMode)
+			continue
+		}
+
 		for k, v := range c.Labels {
 			if strings.HasPrefix(k, LabelServiceMetaKeyPrefix) {
 				svc.Meta[k[len(LabelServiceMetaKeyPrefix):]] = v
@@ -70,13 +94,17 @@ func queryDocker(client *docker.Client) (svcs map[string]Service, chks map[strin
 
 		svcs[svc.ID] = svc
 
-		if c.Labels[LabelServiceCheckKey] == LabelServiceCheckHTTP {
-			var chk Check
-			chk.ID = CheckIDPrefix + shortenID(c.ID)
-			chk.ServiceID = svc.ID
-			chk.URL = fmt.Sprintf("http://127.0.0.1:%d/_health", svc.Port)
+		check := strings.ToLower(c.Labels[LabelServiceCheckKey])
 
+		if check == LabelServiceCheckHTTP {
+			chk := Check{
+				ID:        CheckIDPrefix + shortID,
+				ServiceID: svc.ID,
+				URL:       fmt.Sprintf("http://127.0.0.1:%d/_health", svc.Port),
+			}
 			chks[chk.ID] = chk
+		} else if len(check) > 0 {
+			log.Printf("container %s: check mode %s is not supported", shortID, check)
 		}
 	}
 	return

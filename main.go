@@ -72,16 +72,16 @@ func watch(ctx context.Context) {
 	// streaming events with retry
 outerLoop:
 	for {
-		evch, erch := dclient.Events(ctx, dtypes.EventsOptions{Filters: fargs})
+		ech, errch := dclient.Events(ctx, dtypes.EventsOptions{Filters: fargs})
 
 	innerLoop:
 		for {
 			select {
 			case <-tk.C:
 				syncs <- nil
-			case <-evch:
+			case <-ech:
 				syncs <- nil
-			case err := <-erch:
+			case err := <-errch:
 				if err != nil {
 					log.Printf("docker events streaming failed: %s", err.Error())
 				}
