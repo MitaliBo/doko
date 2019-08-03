@@ -13,17 +13,15 @@ import (
 )
 
 const (
-	CheckIDPrefix = "doko-"
+	ServiceIDPrefix = "doko-"
+	CheckIDPrefix   = "doko-check-"
 
-	LabelServiceNameKey       = "doko/name"
-	LabelServicePortKey       = "doko/port"
-	LabelServiceTagsKey       = "doko/tags"
-	LabelServiceMetaKeyPrefix = "doko/meta-"
-	LabelServiceCheckKey      = "doko/check"
+	LabelServiceNameKey       = "doko.name"
+	LabelServicePortKey       = "doko.port"
+	LabelServiceTagsKey       = "doko.tags"
+	LabelServiceMetaKeyPrefix = "doko.meta."
+	LabelServiceCheckKey      = "doko.check"
 	LabelServiceCheckHTTP     = "http"
-
-	MetaDokoKey   = "doko"
-	MetaDokoValue = "true"
 )
 
 type Service struct {
@@ -52,18 +50,18 @@ func queryDocker(client *docker.Client) (svcs map[string]Service, chks map[strin
 			continue
 		}
 		var svc Service
-		svc.ID = shortenID(c.ID)
 		svc.Name = c.Labels[LabelServiceNameKey]
 		if len(svc.Name) == 0 {
 			continue
 		}
+		svc.ID = ServiceIDPrefix + shortenID(c.ID)
 		svc.Port, _ = strconv.Atoi(c.Labels[LabelServicePortKey])
 		if svc.Port == 0 {
 			log.Printf("label %s is missing for container %s", LabelServicePortKey, svc.ID)
 			continue
 		}
 		svc.Tags = cleanStrSlice(strings.Split(c.Labels[LabelServiceTagsKey], ","))
-		svc.Meta = map[string]string{MetaDokoKey: MetaDokoValue}
+		svc.Meta = map[string]string{}
 		for k, v := range c.Labels {
 			if strings.HasPrefix(k, LabelServiceMetaKeyPrefix) {
 				svc.Meta[k[len(LabelServiceMetaKeyPrefix):]] = v
@@ -74,9 +72,10 @@ func queryDocker(client *docker.Client) (svcs map[string]Service, chks map[strin
 
 		if c.Labels[LabelServiceCheckKey] == LabelServiceCheckHTTP {
 			var chk Check
-			chk.ID = CheckIDPrefix + svc.ID
+			chk.ID = CheckIDPrefix + shortenID(c.ID)
 			chk.ServiceID = svc.ID
 			chk.URL = fmt.Sprintf("http://127.0.0.1:%d/_health", svc.Port)
+
 			chks[chk.ID] = chk
 		}
 	}
@@ -91,7 +90,7 @@ func queryConsul(client *consul.Client) (svcs map[string]Service, chks map[strin
 		return
 	}
 	for _, s := range ss {
-		if s.Meta == nil || s.Meta[MetaDokoKey] != MetaDokoValue {
+		if !strings.HasPrefix(s.ID, ServiceIDPrefix) {
 			continue
 		}
 		svc := Service{
@@ -101,21 +100,22 @@ func queryConsul(client *consul.Client) (svcs map[string]Service, chks map[strin
 			Tags: s.Tags,
 			Meta: s.Meta,
 		}
-		svcs[s.ID] = svc
+		svcs[svc.ID] = svc
 	}
 	var cs map[string]*consul.AgentCheck
 	if cs, err = client.Agent().Checks(); err != nil {
 		return
 	}
 	for _, c := range cs {
-		if strings.HasPrefix(c.CheckID, CheckIDPrefix) {
-			chk := Check{
-				ID:        c.CheckID,
-				ServiceID: c.ServiceID,
-				URL:       c.Definition.HTTP,
-			}
-			chks[c.CheckID] = chk
+		if !strings.HasPrefix(c.CheckID, CheckIDPrefix) {
+			continue
 		}
+		chk := Check{
+			ID:        c.CheckID,
+			ServiceID: c.ServiceID,
+			URL:       c.Definition.HTTP,
+		}
+		chks[chk.ID] = chk
 	}
 	return
 }
@@ -144,7 +144,7 @@ func synchronize(dc *docker.Client, cc *consul.Client) (err error) {
 
 	for _, c := range cchks {
 		if _, ok := dchks[c.ID]; !ok {
-			log.Printf("check for %s no longer exists, deregistering", c.ServiceID)
+			log.Printf("check %s no longer exists, deregistering", c.ID)
 			if err = cc.Agent().CheckDeregister(c.ID); err != nil {
 				return
 			}
@@ -176,7 +176,7 @@ func synchronize(dc *docker.Client, cc *consul.Client) (err error) {
 		if err = cc.Agent().CheckRegister(&consul.AgentCheckRegistration{
 			ID:        c.ID,
 			ServiceID: c.ServiceID,
-			Name:      "http check for container " + c.ServiceID,
+			Name:      "doko check for " + c.ServiceID,
 			AgentServiceCheck: consul.AgentServiceCheck{
 				HTTP:     c.URL,
 				Interval: "5s",

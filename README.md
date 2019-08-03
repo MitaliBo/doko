@@ -6,11 +6,11 @@
 
 ## Container Labels
 
-* `doko/name`, name of the service
-* `doko/port`, port of the service
-* `doko/tags`, comma separated tags of the service
-* `doko/check`, check mode, currently only `http` is supported
-* `doko/meta-XXX`, meta of the service, `doko` is the reserved key
+* `doko.name`, name of the service
+* `doko.port`, port of the service
+* `doko.tags`, comma separated tags of the service
+* `doko.check`, check mode, currently only `http` is supported
+* `doko.meta.XXX`, meta of the service
 
 ## Usage
 
@@ -34,7 +34,7 @@
 
     ```
     docker run -d --network host --name nginx \
-        --label doko/name=demo --label doko/port=80 nginx
+        --label doko.name=demo --label doko.port=80 nginx
     ```
     
     You can also set label by `LABEL` command in `Dockerfile`
@@ -55,7 +55,7 @@
 
 ## Health Check
 
-When label `doko/check` is set to `HTTP`, `doko` will register a `http` health check to `consul`
+When label `doko.check` is set to `HTTP`, `doko` will register a `http` health check to `consul`
 
 ```sh
 http://127.0.0.1:[PORT]/_health
