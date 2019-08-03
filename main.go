@@ -12,8 +12,8 @@ import (
 )
 
 var (
-	dockerClient *docker.Client
-	consulClient *consul.Client
+	dclient *docker.Client
+	cclient *consul.Client
 
 	syncs = make(chan interface{}, 10)
 )
@@ -30,61 +30,67 @@ func main() {
 	defer exit(&err)
 
 	// docker client
-	if dockerClient, err = docker.NewEnvClient(); err != nil {
+	if dclient, err = docker.NewEnvClient(); err != nil {
 		return
 	}
 
 	// consul client
-	if consulClient, err = consul.NewClient(consul.DefaultConfig()); err != nil {
+	if cclient, err = consul.NewClient(consul.DefaultConfig()); err != nil {
 		return
 	}
 
 	// run debounced sync routine
-	go debounce(time.Second*3, syncs, notify)
+	go debounce(time.Second*3, syncs, synchronizeWithRetry)
 
 	// trigger initial sync
 	syncs <- nil
 
 	// watch
-	if err = watch(); err != nil {
-		return
-	}
+	watch(context.Background())
 }
 
-func notify() {
-	if err := synchronize(dockerClient, consulClient); err != nil {
-		log.Println("SYNC: failed to sync:", err.Error())
+func synchronizeWithRetry() {
+	if err := synchronize(dclient, cclient); err != nil {
+		log.Printf("failed to synchronize: %s", err.Error())
 		// re-trigger sync
 		syncs <- nil
 	}
 }
 
-func watch() (err error) {
-	ctx, ctxCancel := context.WithCancel(context.Background())
-	defer ctxCancel()
-
-	// ticker to ensure full synchronization
-	tk := time.NewTicker(time.Second * 20)
+func watch(ctx context.Context) {
+	// full sync every 30 seconds, resolving any kind of race condition
+	tk := time.NewTicker(time.Second * 30)
 	defer tk.Stop()
 
-	// limit events to local container
+	// build events filter
 	fargs := filters.NewArgs()
 	fargs.Add("scope", "local")
 	fargs.Add("type", "container")
 	fargs.Add("event", "start")
 	fargs.Add("event", "die")
 
-	// start streaming
-	vchan, echan := dockerClient.Events(ctx, dtypes.EventsOptions{Filters: fargs})
-
+	// streaming events with retry
+outerLoop:
 	for {
-		select {
-		case <-tk.C:
-			syncs <- nil
-		case <-vchan:
-			syncs <- nil
-		case err = <-echan:
-			return
+		evch, erch := dclient.Events(ctx, dtypes.EventsOptions{Filters: fargs})
+
+	innerLoop:
+		for {
+			select {
+			case <-tk.C:
+				syncs <- nil
+			case <-evch:
+				syncs <- nil
+			case err := <-erch:
+				if err != nil {
+					log.Printf("docker events streaming failed: %s", err.Error())
+				}
+				break innerLoop
+			case <-ctx.Done():
+				break outerLoop
+			}
 		}
+
+		time.Sleep(time.Second)
 	}
 }

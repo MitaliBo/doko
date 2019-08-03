@@ -1,15 +1,16 @@
-# docons
+# doko
 
-consul service integration for docker container
+`consul` service integration for `docker` containers
 
-`docons` uses container id as consul service id, use container labels for other service definitions.
+`doko` uses container id as consul service id, use container labels for other service definitions.
 
 ## Container Labels
 
-* `docons/name`, name of the service
-* `docons/port`, port of the service
-* `docons/tags`, comma separated tags of the service
-* `docons/meta-XXX`, meta of the service, `docons` is the reserved key
+* `doko/name`, name of the service
+* `doko/port`, port of the service
+* `doko/tags`, comma separated tags of the service
+* `doko/check`, check mode, currently only `http` is supported
+* `doko/meta-XXX`, meta of the service, `doko` is the reserved key
 
 ## Usage
 
@@ -21,19 +22,19 @@ consul service integration for docker container
     consul agent -dev -ui
     ```
 
-3. Install and run `docons`
+3. Install and run `doko`
 
     ```
-    go install -u go.guoyk.net/docons
+    go install -u go.guoyk.net/doko
 
-    docons
+    doko
     ```
 
 4. Start a container with specified labels
 
     ```
     docker run -d --network host --name nginx \
-        --label docons/name=demo --label docons/port=80 nginx
+        --label doko/name=demo --label doko/port=80 nginx
     ```
     
     You can also set label by `LABEL` command in `Dockerfile`
@@ -51,6 +52,14 @@ consul service integration for docker container
 7. Check `consul` Web UI again
 
     You will see that service is unregistered automatically.
+
+## Health Check
+
+When label `doko/check` is set to `HTTP`, `doko` will register a `http` health check to `consul`
+
+```sh
+http://127.0.0.1:[PORT]/_health
+```
 
 ## Credits
 

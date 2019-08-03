@@ -1,9 +1,9 @@
 FROM nginx
 
 ADD default.conf /etc/nginx/conf.d/default.conf
+RUN mkdir -p /var/www/public && echo OK > /var/www/public/_health
 
-LABEL docons/name=docons-demo-service
-LABEL docons/port=8080
-LABEL docons/tags=demo,nginx
-LABEL docons/meta-sidecar-mode=http
-LABEL docons/meta-sidecar-http-prefix=/hello/world
+LABEL doko/name=doko-demo-service
+LABEL doko/port=8081
+LABEL doko/check=http
+LABEL doko/tags=demo,nginx

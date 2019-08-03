@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	dtypes "github.com/docker/docker/api/types"
 	docker "github.com/docker/docker/client"
 	consul "github.com/hashicorp/consul/api"
@@ -12,16 +13,19 @@ import (
 )
 
 const (
-	labelServiceNameKey       = "docons/name"
-	labelServicePortKey       = "docons/port"
-	labelServiceTagsKey       = "docons/tags"
-	labelServiceMetaKeyPrefix = "docons/meta-"
+	CheckIDPrefix = "doko-"
 
-	metaDoconsKey   = "docons"
-	metaDoconsValue = "true"
+	LabelServiceNameKey       = "doko/name"
+	LabelServicePortKey       = "doko/port"
+	LabelServiceTagsKey       = "doko/tags"
+	LabelServiceMetaKeyPrefix = "doko/meta-"
+	LabelServiceCheckKey      = "doko/check"
+	LabelServiceCheckHTTP     = "http"
+
+	MetaDokoKey   = "doko"
+	MetaDokoValue = "true"
 )
 
-// Service interchange struct for docker container and consul service
 type Service struct {
 	ID   string
 	Name string
@@ -30,8 +34,15 @@ type Service struct {
 	Meta map[string]string
 }
 
-func listDockerServices(client *docker.Client) (svcs map[string]Service, err error) {
+type Check struct {
+	ID        string
+	ServiceID string
+	URL       string
+}
+
+func queryDocker(client *docker.Client) (svcs map[string]Service, chks map[string]Check, err error) {
 	svcs = map[string]Service{}
+	chks = map[string]Check{}
 	var cs []dtypes.Container
 	if cs, err = client.ContainerList(context.Background(), dtypes.ContainerListOptions{}); err != nil {
 		return
@@ -40,50 +51,70 @@ func listDockerServices(client *docker.Client) (svcs map[string]Service, err err
 		if c.Labels == nil {
 			continue
 		}
-		name := c.Labels[labelServiceNameKey]
-		if len(name) == 0 {
+		var svc Service
+		svc.ID = shortenID(c.ID)
+		svc.Name = c.Labels[LabelServiceNameKey]
+		if len(svc.Name) == 0 {
 			continue
 		}
-		port, _ := strconv.Atoi(c.Labels[labelServicePortKey])
-		if port == 0 {
-			log.Println("label", labelServicePortKey, "is missing:", c.Names)
+		svc.Port, _ = strconv.Atoi(c.Labels[LabelServicePortKey])
+		if svc.Port == 0 {
+			log.Printf("label %s is missing for container %s", LabelServicePortKey, svc.ID)
 			continue
 		}
-		tags := cleanStrSlice(strings.Split(c.Labels[labelServiceTagsKey], ","))
-		meta := map[string]string{}
+		svc.Tags = cleanStrSlice(strings.Split(c.Labels[LabelServiceTagsKey], ","))
+		svc.Meta = map[string]string{MetaDokoKey: MetaDokoValue}
 		for k, v := range c.Labels {
-			if strings.HasPrefix(k, labelServiceMetaKeyPrefix) {
-				meta[k[len(labelServiceMetaKeyPrefix):]] = v
+			if strings.HasPrefix(k, LabelServiceMetaKeyPrefix) {
+				svc.Meta[k[len(LabelServiceMetaKeyPrefix):]] = v
 			}
 		}
-		meta[metaDoconsKey] = metaDoconsValue
-		svcs[c.ID] = Service{
-			ID:   c.ID,
-			Name: name,
-			Port: port,
-			Tags: tags,
-			Meta: meta,
+
+		svcs[svc.ID] = svc
+
+		if c.Labels[LabelServiceCheckKey] == LabelServiceCheckHTTP {
+			var chk Check
+			chk.ID = CheckIDPrefix + svc.ID
+			chk.ServiceID = svc.ID
+			chk.URL = fmt.Sprintf("http://127.0.0.1:%d/_health", svc.Port)
+			chks[chk.ID] = chk
 		}
 	}
 	return
 }
 
-func listConsulServices(client *consul.Client) (svcs map[string]Service, err error) {
+func queryConsul(client *consul.Client) (svcs map[string]Service, chks map[string]Check, err error) {
 	svcs = map[string]Service{}
-	var cs map[string]*consul.AgentService
-	if cs, err = client.Agent().Services(); err != nil {
+	chks = map[string]Check{}
+	var ss map[string]*consul.AgentService
+	if ss, err = client.Agent().Services(); err != nil {
 		return
 	}
-	for _, s := range cs {
-		if s.Meta == nil || s.Meta[metaDoconsKey] != metaDoconsValue {
+	for _, s := range ss {
+		if s.Meta == nil || s.Meta[MetaDokoKey] != MetaDokoValue {
 			continue
 		}
-		svcs[s.ID] = Service{
+		svc := Service{
 			ID:   s.ID,
 			Name: s.Service,
 			Port: s.Port,
 			Tags: s.Tags,
 			Meta: s.Meta,
+		}
+		svcs[s.ID] = svc
+	}
+	var cs map[string]*consul.AgentCheck
+	if cs, err = client.Agent().Checks(); err != nil {
+		return
+	}
+	for _, c := range cs {
+		if strings.HasPrefix(c.CheckID, CheckIDPrefix) {
+			chk := Check{
+				ID:        c.CheckID,
+				ServiceID: c.ServiceID,
+				URL:       c.Definition.HTTP,
+			}
+			chks[c.CheckID] = chk
 		}
 	}
 	return
@@ -91,18 +122,30 @@ func listConsulServices(client *consul.Client) (svcs map[string]Service, err err
 
 func synchronize(dc *docker.Client, cc *consul.Client) (err error) {
 	var dsvcs map[string]Service
+	var dchks map[string]Check
 	var csvcs map[string]Service
+	var cchks map[string]Check
 
-	if dsvcs, err = listDockerServices(dc); err != nil {
+	if dsvcs, dchks, err = queryDocker(dc); err != nil {
 		return
 	}
-	if csvcs, err = listConsulServices(cc); err != nil {
+	if csvcs, cchks, err = queryConsul(cc); err != nil {
 		return
 	}
 
 	for _, s := range csvcs {
 		if _, ok := dsvcs[s.ID]; !ok {
+			log.Printf("service %s(%s) no longer exists, deregistering", s.Name, s.ID)
 			if err = cc.Agent().ServiceDeregister(s.ID); err != nil {
+				return
+			}
+		}
+	}
+
+	for _, c := range cchks {
+		if _, ok := dchks[c.ID]; !ok {
+			log.Printf("check for %s no longer exists, deregistering", c.ServiceID)
+			if err = cc.Agent().CheckDeregister(c.ID); err != nil {
 				return
 			}
 		}
@@ -112,12 +155,32 @@ func synchronize(dc *docker.Client, cc *consul.Client) (err error) {
 		if reflect.DeepEqual(s, csvcs[s.ID]) {
 			continue
 		}
+		log.Printf("service create/update %s(%s), %+v", s.Name, s.ID, s)
 		if err = cc.Agent().ServiceRegister(&consul.AgentServiceRegistration{
 			ID:   s.ID,
 			Name: s.Name,
 			Port: s.Port,
 			Tags: s.Tags,
 			Meta: s.Meta,
+		}); err != nil {
+			return
+		}
+	}
+
+	for _, c := range dchks {
+		// no DeepEqual because consul checks returns no URL
+		if c.ServiceID == cchks[c.ID].ServiceID {
+			continue
+		}
+		log.Printf("check create/update for %s, %+v", c.ServiceID, c)
+		if err = cc.Agent().CheckRegister(&consul.AgentCheckRegistration{
+			ID:        c.ID,
+			ServiceID: c.ServiceID,
+			Name:      "http check for container " + c.ServiceID,
+			AgentServiceCheck: consul.AgentServiceCheck{
+				HTTP:     c.URL,
+				Interval: "5s",
+			},
 		}); err != nil {
 			return
 		}
