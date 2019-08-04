@@ -48,7 +48,7 @@
 6. Stop the container
 
     ```
-    docker stop nginx
+    docker stop nginx1 nginx2
     ```
 
 7. Check `consul` Web UI again
