@@ -204,7 +204,7 @@ func synchronize(dc *docker.Client, cc *consul.Client) (err error) {
 		if err = cc.Agent().CheckRegister(&consul.AgentCheckRegistration{
 			ID:        c.ID,
 			ServiceID: c.ServiceID,
-			Name:      "(doko) HTTP Health Check",
+			Name:      "(doko) HTTP Health Check for " + c.ServiceID,
 			AgentServiceCheck: consul.AgentServiceCheck{
 				HTTP:     c.URL,
 				Interval: "5s",
