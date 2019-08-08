@@ -13,8 +13,8 @@ import (
 )
 
 const (
-	ServiceIDPrefix = "doko-"
-	CheckIDPrefix   = "doko-check-"
+	ServiceIDPrefix = "doko-srv-"
+	CheckIDPrefix   = "doko-chk-"
 
 	LabelServiceNameKey       = "doko.name"
 	LabelServicePortKey       = "doko.port"
