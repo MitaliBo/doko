@@ -161,19 +161,19 @@ func synchronize(dc *docker.Client, cc *consul.Client) (err error) {
 		return
 	}
 
-	for _, s := range csvcs {
-		if _, ok := dsvcs[s.ID]; !ok {
-			log.Printf("service %s(%s) no longer exists, deregistering", s.Name, s.ID)
-			if err = cc.Agent().ServiceDeregister(s.ID); err != nil {
+	for _, c := range cchks {
+		if _, ok := dchks[c.ID]; !ok {
+			log.Printf("check %s no longer exists, deregistering", c.ID)
+			if err = cc.Agent().CheckDeregister(c.ID); err != nil {
 				return
 			}
 		}
 	}
 
-	for _, c := range cchks {
-		if _, ok := dchks[c.ID]; !ok {
-			log.Printf("check %s no longer exists, deregistering", c.ID)
-			if err = cc.Agent().CheckDeregister(c.ID); err != nil {
+	for _, s := range csvcs {
+		if _, ok := dsvcs[s.ID]; !ok {
+			log.Printf("service %s(%s) no longer exists, deregistering", s.Name, s.ID)
+			if err = cc.Agent().ServiceDeregister(s.ID); err != nil {
 				return
 			}
 		}
@@ -204,7 +204,7 @@ func synchronize(dc *docker.Client, cc *consul.Client) (err error) {
 		if err = cc.Agent().CheckRegister(&consul.AgentCheckRegistration{
 			ID:        c.ID,
 			ServiceID: c.ServiceID,
-			Name:      "doko check for " + c.ServiceID,
+			Name:      "(doko) HTTP Health Check",
 			AgentServiceCheck: consul.AgentServiceCheck{
 				HTTP:     c.URL,
 				Interval: "5s",

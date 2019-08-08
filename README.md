@@ -63,6 +63,16 @@ When label `doko.check` is set to `http`, `doko` will register a `http` health c
 http://127.0.0.1:[PORT]/_health
 ```
 
+## Persisted Storage
+
+`doko` will register self as a `consul` service, the instance id will be persisted to current directory
+
+```
+doko-id
+```
+
+To deregister current doko instance, run `doko --deregister` manually.
+
 ## Credits
 
 Guo Y.K., MIT License
