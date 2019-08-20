@@ -52,7 +52,7 @@ func registerInstance() (err error) {
 		Port: 0,
 		Check: &consul.AgentServiceCheck{
 			CheckID: instanceCheckID,
-			Name:    "(doko) Internal Alive Check",
+			Name:    "(doko) TTL Check",
 			TTL:     "10s",
 		},
 	}); err != nil {

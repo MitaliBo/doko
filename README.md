@@ -8,8 +8,11 @@
 
 * `doko.name`, name of the service
 * `doko.port`, port of the service, both `host` mode and classic `bridge` mode are supported
-* `doko.tags`, comma separated tags of the service
-* `doko.check`, check mode, currently only `http` is supported
+* `doko.tags`, tags of the service, comma separated
+* `doko.check`, check mode, only `http` and `grpc` are supported
+* `doko.check.interval`, check interval, default `10s`
+* `doko.check.timeout`, check timeout, default `5s`
+* `doko.check.http.path`, `http` mode only, the path of health check endpoint, default to `_health`
 * `doko.meta.XXX`, meta of the service
 
 ## Usage
@@ -57,11 +60,19 @@
 
 ## Health Check
 
+## HTTP
+
 When label `doko.check` is set to `http`, `doko` will register a `http` health check to `consul`
 
 ```sh
 http://127.0.0.1:[PORT]/_health
 ```
+
+You can specify the path by label `doko.check.http.path`
+
+## gRPC
+
+When label `doko.check` is set to `grpc`, `doko` will register a `grpc` health check to `consul`
 
 ## Persisted Storage
 

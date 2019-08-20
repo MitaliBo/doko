@@ -1,19 +1,37 @@
 package main
 
 import (
+	"strconv"
 	"strings"
 	"time"
 )
 
-func cleanStrSlice(ss []string) []string {
+func cleanServiceName(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
+}
+
+func cleanServicePort(s string) (ret int) {
+	ret, _ = strconv.Atoi(strings.TrimSpace(s))
+	return
+}
+
+func cleanServiceTags(ss []string) []string {
 	out := make([]string, 0, len(ss))
 	for _, s := range ss {
-		s = strings.TrimSpace(s)
+		s = strings.ToLower(strings.TrimSpace(s))
 		if len(s) != 0 {
 			out = append(out, s)
 		}
 	}
 	return out
+}
+
+func cleanServiceCheck(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
+}
+
+func cleanContainerLabel(s string) string {
+	return strings.TrimSpace(s)
 }
 
 func debounce(dur time.Duration, in chan interface{}, cb func()) {
