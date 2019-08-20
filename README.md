@@ -4,6 +4,12 @@
 
 `doko` uses container id as consul service id, use container labels for other service definitions.
 
+## Install
+
+```
+go install -u go.guoyk.net/doko
+```
+
 ## Container Labels
 
 * `doko.name`, name of the service
