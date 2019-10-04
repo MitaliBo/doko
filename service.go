@@ -138,6 +138,8 @@ func ServiceFromContainer(c dtypes.Container) (s Service, err error) {
 			s.CheckHTTPPath = cleanContainerLabel(c.Labels[LabelServiceCheckHTTPPathKey])
 			if len(s.CheckHTTPPath) == 0 {
 				s.CheckHTTPPath = "/_health"
+			} else if !strings.HasPrefix(s.CheckHTTPPath, "/") {
+				s.CheckHTTPPath = "/" + s.CheckHTTPPath
 			}
 		}
 	case "":
